@@ -109,7 +109,7 @@ class DiffusionUNetPolicy(nn.Module):
         return trajectory
 
     def predict_action(self, readout) -> Dict[str, torch.Tensor]:
-        B = readout.shape[0]
+        B = readout.shape[0] # batch size  
         T = self.horizon
         Da = self.action_dim
         Do = self.obs_feature_dim
@@ -145,17 +145,17 @@ class DiffusionUNetPolicy(nn.Module):
     # ========= training  ============
     def compute_loss(self, readout, actions):
         batch_size = readout.shape[0]
-
+        # readout: 观测点云数 batch_size*n_obs_steps
         # handle different ways of passing observation
-        local_cond = None
+        local_cond = None # 每个step的action
         global_cond = None
         trajectory = actions
         cond_data = trajectory
         assert readout.shape[0] == batch_size * self.n_obs_steps
         # reshape back to B, Do
-        global_cond = readout.reshape(batch_size, -1) # (B, T*C)
+        global_cond = readout.reshape(batch_size, -1) # (B, T*C)# 把所有观测拼接成全局cond
 
-        # generate impainting mask
+        # generate impainting mask, 哪些时间步是已知的
         condition_mask = self.mask_generator(trajectory.shape)
 
         # Sample noise that we'll add to the images
@@ -174,7 +174,7 @@ class DiffusionUNetPolicy(nn.Module):
         # compute loss mask
         loss_mask = ~condition_mask
 
-        # apply conditioning
+        # apply conditioning ground-truth作为已知部分
         noisy_trajectory[condition_mask] = cond_data[condition_mask]
         
         # Predict the noise residual

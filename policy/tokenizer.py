@@ -16,8 +16,8 @@ class Sparse3DEncoder(torch.nn.Module):
                            100 for voxel_size=0.005 in our experiments
         '''
         soutput = self.cloud_encoder(sinput)
-        feats_batch, coords_batch = soutput.F, soutput.C
-        feats_list = []
+        feats_batch, coords_batch = soutput.F, soutput.C # 点的特征和坐标
+        feats_list = [] # 储存batch内每个实例的特征和坐标
         coords_list = []
         for i in range(batch_size):
             mask = (coords_batch[:,0] == i)

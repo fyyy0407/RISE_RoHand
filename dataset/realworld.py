@@ -27,6 +27,7 @@ class RealWorldDataset(Dataset):
         num_obs = 1,
         num_action = 20, 
         voxel_size = 0.005,
+        hand_dof = 6,
         cam_ids = ['750612070851'],
         aug = False,
         aug_trans_min = [-0.2, -0.2, -0.2],
@@ -48,6 +49,7 @@ class RealWorldDataset(Dataset):
         self.num_obs = num_obs
         self.num_action = num_action
         self.voxel_size = voxel_size
+        self.hand_dof = hand_dof
         self.aug = aug
         self.aug_trans_min = np.array(aug_trans_min)
         self.aug_trans_max = np.array(aug_trans_max)
@@ -131,9 +133,12 @@ class RealWorldDataset(Dataset):
         return clouds, tcps
 
     def _normalize_tcp(self, tcp_list):
-        ''' tcp_list: [T, 3(trans) + 6(rot) + 1(width)]'''
+        ###############TO DO####################
+        #change gripper width to hand data
+        ''' tcp_list: [T, 3(trans) + 6(rot) + 6(hand pose)]'''
         tcp_list[:, :3] = (tcp_list[:, :3] - TRANS_MIN) / (TRANS_MAX - TRANS_MIN) * 2 - 1
-        tcp_list[:, -1] = tcp_list[:, -1] / MAX_GRIPPER_WIDTH * 2 - 1
+        # from [0,1] to [-1,1]
+        tcp_list[:, 9:] = tcp_list[:, 9:]*2-1
         return tcp_list
 
     def load_point_cloud(self, colors, depths, cam_id):
@@ -166,7 +171,10 @@ class RealWorldDataset(Dataset):
         color_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'color')
         depth_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'depth')
         tcp_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'tcp')
-        gripper_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'gripper_command')
+        
+        ###############TO DO#########################
+        # change the direction of hand
+        hand_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'hand')
 
         # load camera projector by calib timestamp
         timestamp_path = os.path.join(data_path, 'timestamp.txt')
@@ -217,16 +225,20 @@ class RealWorldDataset(Dataset):
             clouds.append(cloud)
 
         # actions
+        ##################TO DO####################
+        # change grippers to hand
         action_tcps = []
-        action_grippers = []
+        action_hand = []
         for frame_id in action_frame_ids:
             tcp = np.load(os.path.join(tcp_dir, "{}.npy".format(frame_id)))[:7].astype(np.float32)
             projected_tcp = projector.project_tcp_to_camera_coord(tcp, cam_id)
-            gripper_width = decode_gripper_width(np.load(os.path.join(gripper_dir, "{}.npy".format(frame_id)))[0])
+            
+            handPose=decode_hand_pose(np.load(os.path.join(hand_dir,"{}.npy".format(frame_id))))
+           
             action_tcps.append(projected_tcp)
-            action_grippers.append(gripper_width)
+            action_hand.append(handPose)
         action_tcps = np.stack(action_tcps)
-        action_grippers = np.stack(action_grippers)
+        action_hand= np.stack(action_hand)
 
         # point augmentations
         if self.split == 'train' and self.aug:
@@ -235,6 +247,9 @@ class RealWorldDataset(Dataset):
         # visualization
         if self.vis:
             points = clouds[-1][..., :3]
+            
+            points = Projector.project_tcp_to_base_coord(points,cam_id)
+            
             print("point range", points.min(axis=0), points.max(axis=0))
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(points)
@@ -255,7 +270,7 @@ class RealWorldDataset(Dataset):
         
         # rotation transformation (to 6d)
         action_tcps = xyz_rot_transform(action_tcps, from_rep = "quaternion", to_rep = "rotation_6d")
-        actions = np.concatenate((action_tcps, action_grippers[..., np.newaxis]), axis = -1)
+        actions = np.concatenate((action_tcps, action_hand), axis = -1)
 
         # normalization
         actions_normalized = self._normalize_tcp(actions.copy())
@@ -311,5 +326,6 @@ def collate_fn(batch):
     raise TypeError("batch must contain tensors, dicts or lists; found {}".format(type(batch[0])))
 
 
-def decode_gripper_width(gripper_width):
-    return gripper_width / 1000. * 0.095
+def decode_hand_pose(handPose):
+    handPose = np.clip(handPose, 0, 65536)
+    return handPose / 65536

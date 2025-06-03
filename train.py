@@ -27,6 +27,7 @@ default_args = edict({
     "obs_feature_dim": 512,
     "hidden_dim": 512,
     "nheads": 8,
+    "hand_dof": 6,
     "num_encoder_layers": 4,
     "num_decoder_layers": 1,
     "dim_feedforward": 2048,
@@ -76,6 +77,7 @@ def train(args_override):
         with_cloud = False,
         vis = args.vis_data
     )
+    # 将数据分配给各个进程
     sampler = torch.utils.data.distributed.DistributedSampler(
         dataset, 
         num_replicas = WORLD_SIZE, 
@@ -92,12 +94,12 @@ def train(args_override):
     )
 
     # policy
-    if RANK == 0: print("Loading policy ...")
+    if RANK == 0: print("Loading policy ...") # RANK=0表示主进程
     policy = RISE(
         num_action = args.num_action,
         input_dim = 6,
         obs_feature_dim = args.obs_feature_dim,
-        action_dim = 10,
+        action_dim = 3+6+args.hand_dof, #3trans+6rot+6hand
         hidden_dim = args.hidden_dim,
         nheads = args.nheads,
         num_encoder_layers = args.num_encoder_layers,
@@ -149,11 +151,11 @@ def train(args_override):
 
         for data in pbar:
             # cloud data processing
-            cloud_coords = data['input_coords_list']
-            cloud_feats = data['input_feats_list']
-            action_data = data['action_normalized']
+            cloud_coords = data['input_coords_list'] #点云坐标
+            cloud_feats = data['input_feats_list'] #点云特征
+            action_data = data['action_normalized'] #点云动作
             cloud_feats, cloud_coords, action_data = cloud_feats.to(device), cloud_coords.to(device), action_data.to(device)
-            cloud_data = ME.SparseTensor(cloud_feats, cloud_coords)
+            cloud_data = ME.SparseTensor(cloud_feats, cloud_coords) #sparse encoding
             # forward
             loss = policy(cloud_data, action_data, batch_size = action_data.shape[0])
             # backward
@@ -201,6 +203,8 @@ if __name__ == '__main__':
     parser.add_argument('--resume_ckpt', action = 'store', type = str, help = 'resume checkpoint file', required = False, default = None)
     parser.add_argument('--resume_epoch', action = 'store', type = int, help = 'resume from which epoch', required = False, default = -1)
     parser.add_argument('--lr', action = 'store', type = float, help = 'learning rate', required = False, default = 3e-4)
+    parser.add_argument('--hand_dof', type=int, default=6, help='DoF of dexterous hand')
+
     parser.add_argument('--batch_size', action = 'store', type = int, help = 'batch size', required = False, default = 240)
     parser.add_argument('--num_epochs', action = 'store', type = int, help = 'training epochs', required = False, default = 1000)
     parser.add_argument('--save_epochs', action = 'store', type = int, help = 'saving epochs', required = False, default = 50)

@@ -6,7 +6,7 @@ import time
 import numpy as np
 from device.robot.flexiv import FlexivRobot
 from utils.transformation import xyz_rot_transform
-from device.gripper.dahuan import DahuanModbusGripper
+from device.OyMotion.ROHand import ROHand
 from device.camera.realsense import RealSenseRGBDCamera
 
 
@@ -18,22 +18,22 @@ class Agent:
     """
     def __init__(
         self,
-        robot_ip,
+        robot_ip, 
         pc_ip,
-        gripper_port,
+        com_port,
         camera_serial,
         **kwargs
     ): 
         self.camera_serial = camera_serial
 
-        print("Init robot, gripper, and camera.")
+        print("Init robot, hand, and camera.")
         self.robot = FlexivRobot(robot_ip_address = robot_ip, pc_ip_address = pc_ip)
         self.robot.send_tcp_pose(self.ready_pose)
         time.sleep(1.5)
         
-        self.gripper = DahuanModbusGripper(port = gripper_port)
-        self.gripper.set_force(30)
-        self.gripper.set_width(0)
+        self.hand = ROHand(COM_PORT=com_port)
+        self.hand.connect()
+        self.hand.reset()
         time.sleep(0.5)
 
         self.camera = RealSenseRGBDCamera(serial = camera_serial)
@@ -72,9 +72,9 @@ class Agent:
         if blocking:
             time.sleep(0.1)
     
-    def set_gripper_width(self, width, blocking = False):
-        width = int(np.clip(width / 0.095 * 1000., 0, 1000))
-        self.gripper.set_width(width)
+    def set_hand_pose(self, hand_pose, blocking = False):
+        hand_pose = int(np.clip(hand_pose * 65536, 0, 65536))
+        self.hand.set_finger_pos(hand_pose)
         if blocking:
             time.sleep(0.5)
     

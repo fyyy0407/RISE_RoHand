@@ -98,7 +98,7 @@ def create_input(colors, depths, cam_intrinsics, voxel_size = 0.005):
 
 def unnormalize_action(action):
     action[..., :3] = (action[..., :3] + 1) / 2.0 * (TRANS_MAX - TRANS_MIN) + TRANS_MIN
-    action[..., -1] = (action[..., -1] + 1) / 2.0 * MAX_GRIPPER_WIDTH
+    action[..., 9:] = action[..., 9:]*2-1
     return action
 
 def rot_diff(rot1, rot2):
@@ -141,7 +141,7 @@ def evaluate(args_override):
         num_action = args.num_action,
         input_dim = 6,
         obs_feature_dim = args.obs_feature_dim,
-        action_dim = 10,
+        action_dim = 15,
         hidden_dim = args.hidden_dim,
         nheads = args.nheads,
         num_encoder_layers = args.num_encoder_layers,
@@ -160,7 +160,7 @@ def evaluate(args_override):
     agent = Agent(
         robot_ip = "192.168.2.100",
         pc_ip = "192.168.2.35",
-        gripper_port = "/dev/ttyUSB0",
+        com_port = "/dev/ttyUSB0",
         camera_serial = "750612070851"
     )
     projector = Projector(args.calib)
@@ -170,7 +170,7 @@ def evaluate(args_override):
         last_rot = np.array(agent.ready_rot_6d, dtype = np.float32)
     with torch.inference_mode():
         policy.eval()
-        prev_width = None
+        prev_pose = None
         for t in range(args.max_steps):
             if t % args.num_inference_step == 0:
                 # pre-process inputs
@@ -200,11 +200,11 @@ def evaluate(args_override):
                     o3d.visualization.draw_geometries([pcd, *tcp_vis_list])
                 # project action to base coordinate
                 action_tcp = projector.project_tcp_to_base_coord(action[..., :-1], cam = agent.camera_serial, rotation_rep = "rotation_6d")
-                action_width = action[..., -1]
+                hand_pose = action[..., 9:]
                 # safety insurance
                 action_tcp[..., :3] = np.clip(action_tcp[..., :3], SAFE_WORKSPACE_MIN + SAFE_EPS, SAFE_WORKSPACE_MAX - SAFE_EPS)
                 # full actions
-                action = np.concatenate([action_tcp, action_width[..., np.newaxis]], axis = -1)
+                action = np.concatenate([action_tcp, hand_pose], axis = -1)
                 # add to ensemble buffer
                 ensemble_buffer.add_action(action, t)
             
@@ -214,7 +214,7 @@ def evaluate(args_override):
                 continue
             
             step_tcp = step_action[:-1]
-            step_width = step_action[-1]
+            hand_pose = step_action[9:]
 
             # send tcp pose to robot
             if args.discretize_rotation:
@@ -234,10 +234,10 @@ def evaluate(args_override):
                     blocking = True
                 )
             
-            # send gripper width to gripper (thresholding to avoid repeating sending signals to gripper)
-            if prev_width is None or abs(prev_width - step_width) > GRIPPER_THRESHOLD:
-                agent.set_gripper_width(step_width, blocking = True)
-                prev_width = step_width
+            # send hand_pose to rohand (thresholding to avoid repeating sending signals to rohand)
+            if prev_pose is None or np.max(np.abs(prev_pose - hand_pose))  > ROHAND_THRESHOLD:
+                agent.set_hand_pose(hand_pose, blocking = True)
+                prev_pose = hand_pose.copy()
     
     agent.stop()
 

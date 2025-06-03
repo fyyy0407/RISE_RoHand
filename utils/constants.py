@@ -17,5 +17,5 @@ SAFE_EPS = 0.002
 SAFE_WORKSPACE_MIN = np.array([0.2, -0.4, 0.0])
 SAFE_WORKSPACE_MAX = np.array([0.8, 0.4, 0.4])
 
-# gripper threshold (to avoid gripper action too frequently)
-GRIPPER_THRESHOLD = 0.02 # meter
+# rohand threshold (to avoid rohand action too frequently)
+ROHAND_THRESHOLD = 0.02 # meter
