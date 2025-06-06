@@ -27,8 +27,7 @@ class RealWorldDataset(Dataset):
         num_obs = 1,
         num_action = 20, 
         voxel_size = 0.005,
-        hand_dof = 6,
-        cam_ids = ['750612070851'],
+        cam_ids = ['038522063145'],
         aug = False,
         aug_trans_min = [-0.2, -0.2, -0.2],
         aug_trans_max = [0.2, 0.2, 0.2],
@@ -49,7 +48,6 @@ class RealWorldDataset(Dataset):
         self.num_obs = num_obs
         self.num_action = num_action
         self.voxel_size = voxel_size
-        self.hand_dof = hand_dof
         self.aug = aug
         self.aug_trans_min = np.array(aug_trans_min)
         self.aug_trans_max = np.array(aug_trans_max)
@@ -60,18 +58,23 @@ class RealWorldDataset(Dataset):
         self.aug_jitter_prob = aug_jitter_prob
         self.with_cloud = with_cloud
         self.vis = vis
-        
         self.all_demos = sorted(os.listdir(self.data_path))
-        self.num_demos = len(self.all_demos)
 
+        self.num_demos = len(self.all_demos)
+        self.min_buffer=[]
+        self.max_buffer=[]
         self.data_paths = []
         self.cam_ids = []
         self.calib_timestamp = []
         self.obs_frame_ids = []
         self.action_frame_ids = []
         self.projectors = {}
-        
+        calib_path=os.path.expanduser("data/RISE_rohand/calib/1749025074554")
+        self.projector=Projector(calib_path=calib_path)
+        self.tcp_data=[]
+        self.frame_clips=[]
         for i in range(self.num_demos):
+            clip_start=len(self.obs_frame_ids)
             demo_path = os.path.join(self.data_path, self.all_demos[i])
             for cam_id in cam_ids:
                 # path
@@ -81,20 +84,33 @@ class RealWorldDataset(Dataset):
                 # metadata
                 with open(os.path.join(demo_path, "metadata.json"), "r") as f:
                     meta = json.load(f)
-                # get frame ids
-                frame_ids = [
-                    int(os.path.splitext(x)[0]) 
-                    for x in sorted(os.listdir(os.path.join(cam_path, "color"))) 
-                    if int(os.path.splitext(x)[0]) <= meta["finish_time"]
-                ]
+                
+                tcp_path=os.path.join(demo_path,"lowdim","processed_tcp.npz")
+                tcp_data=np.load(tcp_path)
+                timestamps = sorted(tcp_data.files, key=int)
+                ## Find the first timestamp such that the tcp is valid
+                first_idx=0
+                for ts in timestamps:
+                    if not ((tcp_data[ts][3:])**2).sum()==0:
+                        first_idx=ts
+                        break
+                assert(first_idx !=0)
+                filtered_timestamps = [t for t in timestamps if t >= first_idx]
+                tcp = np.array([tcp_data[ts] for ts in filtered_timestamps])
                 # get calib timestamps
-                with open(os.path.join(demo_path, "timestamp.txt"), "r") as f:
-                    calib_timestamp = f.readline().rstrip()
+                # with open(os.path.join(demo_path, "timestamp.txt"), "r") as f:
+                #     calib_timestamp = f.readline().rstrip()
                 # get samples according to num_obs and num_action
                 obs_frame_ids_list = []
                 action_frame_ids_list = []
                 padding_mask_list = []
-
+                # get frame ids
+                frame_ids = [
+                    os.path.splitext(x)[0]
+                    for x in sorted(os.listdir(os.path.join(cam_path, "color"))) 
+                    # if int(os.path.splitext(x)[0]) <= meta["finish_time"]
+                ]
+                frame_ids=[int(id_) for id_ in frame_ids if id_ >=first_idx]
                 for cur_idx in range(len(frame_ids) - 1):
                     obs_pad_before = max(0, num_obs - cur_idx - 1)
                     action_pad_after = max(0, num_action - (len(frame_ids) - 1 - cur_idx))
@@ -104,12 +120,19 @@ class RealWorldDataset(Dataset):
                     action_frame_ids = frame_ids[cur_idx + 1: frame_end] + frame_ids[-1:] * action_pad_after
                     obs_frame_ids_list.append(obs_frame_ids)
                     action_frame_ids_list.append(action_frame_ids)
-                
+                self.tcp_data.append(tcp[:len(frame_ids)-1,:])
                 self.data_paths += [demo_path] * len(obs_frame_ids_list)
                 self.cam_ids += [cam_id] * len(obs_frame_ids_list)
-                self.calib_timestamp += [calib_timestamp] * len(obs_frame_ids_list)
+                # try:
+                assert(tcp[:len(frame_ids)-1,:].shape[0]==len(obs_frame_ids_list))
+                # except:
+                #     import pdb;pdb.set_trace()
+                # self.calib_timestamp += [calib_timestamp] * len(obs_frame_ids_list)
                 self.obs_frame_ids += obs_frame_ids_list
                 self.action_frame_ids += action_frame_ids_list
+            clip_end=len(self.obs_frame_ids)
+            self.frame_clips.append((clip_start,clip_end))
+        self.tcp_data=np.concatenate(self.tcp_data,axis=0)
         
     def __len__(self):
         return len(self.obs_frame_ids)
@@ -136,6 +159,8 @@ class RealWorldDataset(Dataset):
         ###############TO DO####################
         #change gripper width to hand data
         ''' tcp_list: [T, 3(trans) + 6(rot) + 6(hand pose)]'''
+        self.min_buffer.append(tcp_list[:,:3].min(axis=0))
+        self.max_buffer.append(tcp_list[:,:3].max(axis=0))
         tcp_list[:, :3] = (tcp_list[:, :3] - TRANS_MIN) / (TRANS_MAX - TRANS_MIN) * 2 - 1
         # from [0,1] to [-1,1]
         tcp_list[:, 9:] = tcp_list[:, 9:]*2-1
@@ -163,27 +188,27 @@ class RealWorldDataset(Dataset):
     def __getitem__(self, index):
         data_path = self.data_paths[index]
         cam_id = self.cam_ids[index]
-        calib_timestamp = self.calib_timestamp[index]
+        # calib_timestamp = self.calib_timestamp[index]
         obs_frame_ids = self.obs_frame_ids[index]
         action_frame_ids = self.action_frame_ids[index]
 
         # directories
         color_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'color')
         depth_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'depth')
-        tcp_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'tcp')
+        tcp_dir = os.path.join(data_path, "lowdim")
         
         ###############TO DO#########################
         # change the direction of hand
-        hand_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'hand')
+        hand_dir = os.path.join(data_path, "lowdim")
 
         # load camera projector by calib timestamp
-        timestamp_path = os.path.join(data_path, 'timestamp.txt')
-        with open(timestamp_path, 'r') as f:
-            timestamp = f.readline().rstrip()
-        if timestamp not in self.projectors:
-            # create projector cache
-            self.projectors[timestamp] = Projector(os.path.join(self.calib_path, timestamp))
-        projector = self.projectors[timestamp]
+        # timestamp_path = os.path.join(data_path, 'timestamp.txt')
+        # with open(timestamp_path, 'r') as f:
+        #     timestamp = f.readline().rstrip()
+        # if timestamp not in self.projectors:
+        #     # create projector cache
+        #     self.projectors[timestamp] = Projector(os.path.join(self.calib_path, timestamp))
+        # projector = self.projectors[timestamp]
 
         # create color jitter
         if self.split == 'train' and self.aug_jitter:
@@ -223,27 +248,26 @@ class RealWorldDataset(Dataset):
             colors = (colors - IMG_MEAN) / IMG_STD
             cloud = np.concatenate([points, colors], axis = -1)
             clouds.append(cloud)
-
         # actions
         ##################TO DO####################
         # change grippers to hand
         action_tcps = []
         action_hand = []
         for frame_id in action_frame_ids:
-            tcp = np.load(os.path.join(tcp_dir, "{}.npy".format(frame_id)))[:7].astype(np.float32)
-            projected_tcp = projector.project_tcp_to_camera_coord(tcp, cam_id)
+            tcp=np.load(os.path.join(tcp_dir,'processed_tcp.npz'))[str(frame_id)][:7].astype(np.float32)
+            projected_tcp = self.projector.project_tcp_to_camera_coord(tcp, cam_id)
             
-            handPose=decode_hand_pose(np.load(os.path.join(hand_dir,"{}.npy".format(frame_id))))
+            handPose=decode_hand_pose(np.load(os.path.join(hand_dir,"pos.npz"))[str(frame_id)])
            
             action_tcps.append(projected_tcp)
             action_hand.append(handPose)
+
         action_tcps = np.stack(action_tcps)
         action_hand= np.stack(action_hand)
 
         # point augmentations
         if self.split == 'train' and self.aug:
             clouds, action_tcps = self._augmentation(clouds, action_tcps)
-
         # visualization
         if self.vis:
             points = clouds[-1][..., :3]
@@ -271,7 +295,6 @@ class RealWorldDataset(Dataset):
         # rotation transformation (to 6d)
         action_tcps = xyz_rot_transform(action_tcps, from_rep = "quaternion", to_rep = "rotation_6d")
         actions = np.concatenate((action_tcps, action_hand), axis = -1)
-
         # normalization
         actions_normalized = self._normalize_tcp(actions.copy())
 

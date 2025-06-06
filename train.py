@@ -19,14 +19,14 @@ from utils.training import set_seed, plot_history, sync_loss
 
 
 default_args = edict({
-    "data_path": "data/collect_pens",
+    "data_path": 'data/RISE_rohand',
     "aug": False,
     "aug_jitter": False,
     "num_action": 20,
     "voxel_size": 0.005,
     "obs_feature_dim": 512,
     "hidden_dim": 512,
-    "nheads": 8,
+    # "nheads": 8,
     "hand_dof": 6,
     "num_encoder_layers": 4,
     "num_decoder_layers": 1,
@@ -88,12 +88,13 @@ def train(args_override):
         dataset,
         batch_size = args.batch_size // WORLD_SIZE,
         num_workers = args.num_workers,
-        collate_fn = collate_fn,
+        # num_workers=0,
+        # collate_fn = collate_fn,
+        collate_fn=lambda x: x,
         sampler = sampler,
         drop_last = True
     )
-
-    # policy
+    # Policy
     if RANK == 0: print("Loading policy ...") # RANK=0表示主进程
     policy = RISE(
         num_action = args.num_action,
@@ -139,7 +140,6 @@ def train(args_override):
 
     # training
     train_history = []
-
     policy.train()
     for epoch in range(args.resume_epoch + 1, args.num_epochs):
         if RANK == 0: print("Epoch {}".format(epoch)) 
@@ -148,9 +148,9 @@ def train(args_override):
         num_steps = len(dataloader)
         pbar = tqdm(dataloader) if RANK == 0 else dataloader
         avg_loss = 0
-
         for data in pbar:
             # cloud data processing
+            data=collate_fn(data)
             cloud_coords = data['input_coords_list'] #点云坐标
             cloud_feats = data['input_feats_list'] #点云特征
             action_data = data['action_normalized'] #点云动作
@@ -187,7 +187,7 @@ def train(args_override):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', action = 'store', type = str, help = 'data path', required = True)
+    parser.add_argument('--data_path', action = 'store', type = str, help = 'data path', required = False, default="data/RISE_rohand")
     parser.add_argument('--aug', action = 'store_true', help = 'whether to add 3D data augmentation')
     parser.add_argument('--aug_jitter', action = 'store_true', help = 'whether to add color jitter augmentation')
     parser.add_argument('--num_action', action = 'store', type = int, help = 'number of action steps', required = False, default = 20)
@@ -199,7 +199,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_decoder_layers', action = 'store', type = int, help = 'number of decoder layers', required = False, default = 1)
     parser.add_argument('--dim_feedforward', action = 'store', type = int, help = 'feedforward dimension', required = False, default = 2048)
     parser.add_argument('--dropout', action = 'store', type = float, help = 'dropout ratio', required = False, default = 0.1)
-    parser.add_argument('--ckpt_dir', action = 'store', type = str, help = 'checkpoint directory', required = True)
+    parser.add_argument('--ckpt_dir', action = 'store', type = str, help = 'checkpoint directory', required = False, default="rise_ckpt")
     parser.add_argument('--resume_ckpt', action = 'store', type = str, help = 'resume checkpoint file', required = False, default = None)
     parser.add_argument('--resume_epoch', action = 'store', type = int, help = 'resume from which epoch', required = False, default = -1)
     parser.add_argument('--lr', action = 'store', type = float, help = 'learning rate', required = False, default = 3e-4)
