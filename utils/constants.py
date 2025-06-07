@@ -5,7 +5,7 @@ IMG_MEAN = np.array([0.485, 0.456, 0.406])
 IMG_STD = np.array([0.229, 0.224, 0.225])
 
 # tcp normalization and gripper width normalization
-TRANS_MIN, TRANS_MAX = np.array([-0.25, -0.4, 4]), np.array([0.5, 0.1, 1.0]) 
+TRANS_MIN, TRANS_MAX = np.array([-0.5, -0.6, 0.1]), np.array([0.7, 0.3, 1.0]) 
 MAX_GRIPPER_WIDTH = 0.11 # meter
 
 # workspace in camera coordinate
