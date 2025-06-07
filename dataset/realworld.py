@@ -159,8 +159,8 @@ class RealWorldDataset(Dataset):
         ###############TO DO####################
         #change gripper width to hand data
         ''' tcp_list: [T, 3(trans) + 6(rot) + 6(hand pose)]'''
-        self.min_buffer.append(tcp_list[:,:3].min(axis=0))
-        self.max_buffer.append(tcp_list[:,:3].max(axis=0))
+        # self.min_buffer.append(tcp_list[:,:3].min(axis=0))
+        # self.max_buffer.append(tcp_list[:,:3].max(axis=0))
         tcp_list[:, :3] = (tcp_list[:, :3] - TRANS_MIN) / (TRANS_MAX - TRANS_MIN) * 2 - 1
         # from [0,1] to [-1,1]
         tcp_list[:, 9:] = tcp_list[:, 9:]*2-1
