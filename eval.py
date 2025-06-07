@@ -161,7 +161,7 @@ def evaluate(args_override):
         robot_ip = "192.168.2.100",
         pc_ip = "192.168.2.35",
         com_port = "/dev/ttyUSB0",
-        camera_serial = "750612070851"
+        camera_serial = "038522063145"
     )
     projector = Projector(args.calib)
     ensemble_buffer = EnsembleBuffer(mode = args.ensemble_mode)
@@ -215,24 +215,25 @@ def evaluate(args_override):
             
             step_tcp = step_action[:-1]
             hand_pose = step_action[9:]
-
-            # send tcp pose to robot
-            if args.discretize_rotation:
-                rot_steps = discretize_rotation(last_rot, step_tcp[3:], np.pi / 16)
-                last_rot = step_tcp[3:]
-                for rot in rot_steps:
-                    step_tcp[3:] = rot
-                    agent.set_tcp_pose(
-                        step_tcp, 
-                        rotation_rep = "rotation_6d",
-                        blocking = True
-                    )
-            else:
-                agent.set_tcp_pose(
-                    step_tcp,
-                    rotation_rep = "rotation_6d",
-                    blocking = True
-                )
+            print("step tcp: ",step_tcp)
+            print("hand pose: ",hand_pose)
+            # # send tcp pose to robot
+            # if args.discretize_rotation:
+            #     rot_steps = discretize_rotation(last_rot, step_tcp[3:], np.pi / 16)
+            #     last_rot = step_tcp[3:]
+            #     for rot in rot_steps:
+            #         step_tcp[3:] = rot
+            #         agent.set_tcp_pose(
+            #             step_tcp, 
+            #             rotation_rep = "rotation_6d",
+            #             blocking = True
+            #         )
+            # else:
+            #     agent.set_tcp_pose(
+            #         step_tcp,
+            #         rotation_rep = "rotation_6d",
+            #         blocking = True
+            #     )
             
             # send hand_pose to rohand (thresholding to avoid repeating sending signals to rohand)
             if prev_pose is None or np.max(np.abs(prev_pose - hand_pose))  > ROHAND_THRESHOLD:

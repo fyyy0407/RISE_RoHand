@@ -4,8 +4,9 @@ Flexiv robot ethernet communication python wrapper.
 
 import time
 import numpy as np
+import sys
 
-from device.robot import flexivrdk
+from . import flexivrdk
 
 
 class ModeMap:
