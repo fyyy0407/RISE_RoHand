@@ -20,7 +20,8 @@ class RISE(nn.Module):
         num_encoder_layers = 4, 
         num_decoder_layers = 1, 
         dim_feedforward = 2048, 
-        dropout = 0.1
+        dropout = 0.1,
+        pretrain=False
     ):
         super().__init__()
         num_obs = 1
@@ -28,11 +29,12 @@ class RISE(nn.Module):
         self.transformer = Transformer(hidden_dim, nheads, num_encoder_layers, num_decoder_layers, dim_feedforward, dropout)
         self.action_decoder = DiffusionUNetPolicy(action_dim, num_action, num_obs, obs_feature_dim)
         self.readout_embed = nn.Embedding(1, hidden_dim)
+        self.pretrain=pretrain
         self.vqvae_model=VqVae(
             obs_dim=60,
-            input_dim_h=2,         # Sequence length
-            input_dim_w=3,         # Action dimension
-            n_latent_dims=16,
+            input_dim_h=20,         # Sequence length
+            input_dim_w=6,         # Action dimension
+            n_latent_dims=128,
             vqvae_n_embed=8,
             vqvae_groups=2,
             eval=False,
@@ -41,14 +43,26 @@ class RISE(nn.Module):
         # learnable token,汇聚所有点的上下文信息
 
     def forward(self, cloud, actions = None, batch_size = 24):
-        src, pos, src_padding_mask = self.sparse_encoder(cloud, batch_size=batch_size)
-        # padding_mask: 排除无效点的干扰
-        readout = self.transformer(src, src_padding_mask, self.readout_embed.weight, pos)[-1]
-        readout = readout[:, 0]
-        if actions is not None: # training mode
-            loss = self.action_decoder.compute_loss(readout, actions)
-            return loss
+        if not self.pretrain:
+            src, pos, src_padding_mask = self.sparse_encoder(cloud, batch_size=batch_size)
+            # padding_mask: 排除无效点的干扰
+            readout = self.transformer(src, src_padding_mask, self.readout_embed.weight, pos)[-1]
+            readout = readout[:, 0]
+            if actions is not None: # training mode
+                loss = self.action_decoder.compute_loss(readout, actions)
+                return loss
+            else:
+                with torch.no_grad(): # prediction mode
+                    action_pred = self.action_decoder.predict_action(readout)
+                return action_pred
+        # VqVae Part
         else:
-            with torch.no_grad(): # prediction mode
-                action_pred = self.action_decoder.predict_action(readout)
-            return action_pred
+            act=actions[:,:,9:]
+            encoder_loss, vq_loss_state, vq_code, recon_loss = self.vqvae_model.vqvae_update(act)
+            result_dict={
+                "encoder_loss":encoder_loss,
+                "vq_loss_state":vq_loss_state,
+                "vq_code":vq_code,
+                "recon_loss":recon_loss
+            }
+            return result_dict

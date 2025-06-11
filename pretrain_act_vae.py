@@ -75,7 +75,8 @@ def train(args_override):
         aug = args.aug,
         aug_jitter = args.aug_jitter, 
         with_cloud = False,
-        vis = args.vis_data
+        vis = args.vis_data,
+        pretrain=True
     )
     # 将数据分配给各个进程
     sampler = torch.utils.data.distributed.DistributedSampler(
@@ -86,6 +87,7 @@ def train(args_override):
     )
     dataloader = torch.utils.data.DataLoader(
         dataset,
+        # batch_size=2,
         batch_size = args.batch_size // WORLD_SIZE,
         num_workers = args.num_workers,
         # num_workers=0,
@@ -105,7 +107,8 @@ def train(args_override):
         nheads = args.nheads,
         num_encoder_layers = args.num_encoder_layers,
         num_decoder_layers = args.num_decoder_layers,
-        dropout = args.dropout
+        dropout = args.dropout,
+        pretrain=True
     ).to(device)
     if RANK == 0:
         n_parameters = sum(p.numel() for p in policy.parameters() if p.requires_grad)
@@ -148,29 +151,45 @@ def train(args_override):
         num_steps = len(dataloader)
         pbar = tqdm(dataloader) if RANK == 0 else dataloader
         avg_loss = 0
+        encoder_loss,vq_loss_state,recon_loss=0,0,0
         for data in pbar:
             # cloud data processing
             data=collate_fn(data)
-            
+            cloud_coords = data['input_coords_list'] #点云坐标
+            cloud_feats = data['input_feats_list'] #点云特征
+            action_data = data['action_normalized'] #点云动作
+            cloud_feats, cloud_coords, action_data = cloud_feats.to(device), cloud_coords.to(device), action_data.to(device)
+            cloud_data = ME.SparseTensor(cloud_feats, cloud_coords) #sparse encoding
+            result_dict = policy(cloud_data, action_data, batch_size = action_data.shape[0])
+            encoder_loss+=result_dict['encoder_loss']
+            vq_loss_state+=result_dict['vq_loss_state']
+            recon_loss+=result_dict['recon_loss']
+        encoder_loss/=len(pbar)
+        vq_loss_state/=len(pbar)
+        recon_loss/=len(pbar)
+        total_loss = encoder_loss + vq_loss_state + recon_loss
+        sync_loss(total_loss, device)
+        train_history.append(total_loss.detach().cpu().numpy())
 
-    #     avg_loss = avg_loss / num_steps
-    #     sync_loss(avg_loss, device)
-    #     train_history.append(avg_loss)
+        print(f"Loss (avg over epoch):")
+        print(f"  Encoder Loss:     {encoder_loss:.6f}")
+        print(f"  VQ Loss:          {vq_loss_state:.6f}")
+        print(f"  Recon Loss (MSE): {recon_loss:.6f}")
+        print(f"  Total Loss:       {total_loss:.6f}")
+        if RANK == 0:
+            if (epoch + 1) % args.save_epochs == 0:
+                torch.save(
+                    policy.module.state_dict(),
+                    os.path.join(args.ckpt_dir, "policy_epoch_{}_seed_{}.ckpt".format(epoch + 1, args.seed))
+                )
+                plot_history(train_history, epoch, args.ckpt_dir, args.seed)
 
-    #     if RANK == 0:
-    #         print("Train loss: {:.6f}".format(avg_loss))
-    #         if (epoch + 1) % args.save_epochs == 0:
-    #             torch.save(
-    #                 policy.module.state_dict(),
-    #                 os.path.join(args.ckpt_dir, "policy_epoch_{}_seed_{}.ckpt".format(epoch + 1, args.seed))
-    #             )
-    #             plot_history(train_history, epoch, args.ckpt_dir, args.seed)
 
-    # if RANK == 0:
-    #     torch.save(
-    #         policy.module.state_dict(),
-    #         os.path.join(args.ckpt_dir, "policy_last.ckpt")
-    #     )
+    if RANK == 0:
+        torch.save(
+            policy.module.state_dict(),
+            os.path.join(args.ckpt_dir, "policy_last.ckpt")
+        )
     
 
 if __name__ == '__main__':

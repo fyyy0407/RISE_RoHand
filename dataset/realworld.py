@@ -37,7 +37,9 @@ class RealWorldDataset(Dataset):
         aug_jitter_params = [0.4, 0.4, 0.2, 0.1],
         aug_jitter_prob = 0.2,
         with_cloud = False,
-        vis = False
+        pretrain = False,
+        vis = False,
+        vae_pretrain=False
     ):
         assert split in ['train', 'val', 'all']
 
@@ -57,6 +59,7 @@ class RealWorldDataset(Dataset):
         self.aug_jitter_params = np.array(aug_jitter_params)
         self.aug_jitter_prob = aug_jitter_prob
         self.with_cloud = with_cloud
+        self.pretrain = pretrain
         self.vis = vis
         self.all_demos = sorted(os.listdir(self.data_path))
 
@@ -196,11 +199,8 @@ class RealWorldDataset(Dataset):
         color_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'color')
         depth_dir = os.path.join(data_path, "cam_{}".format(cam_id), 'depth')
         tcp_dir = os.path.join(data_path, "lowdim")
-        
-        ###############TO DO#########################
-        # change the direction of hand
         hand_dir = os.path.join(data_path, "lowdim")
-
+            
         # load camera projector by calib timestamp
         # timestamp_path = os.path.join(data_path, 'timestamp.txt')
         # with open(timestamp_path, 'r') as f:
@@ -249,8 +249,6 @@ class RealWorldDataset(Dataset):
             cloud = np.concatenate([points, colors], axis = -1)
             clouds.append(cloud)
         # actions
-        ##################TO DO####################
-        # change grippers to hand
         action_tcps = []
         action_hand = []
         for frame_id in action_frame_ids:
