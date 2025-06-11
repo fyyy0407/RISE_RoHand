@@ -1,0 +1,5 @@
+from policy.vqvae_rise.vector_quantize_pytorch.vector_quantize_pytorch import VectorQuantize
+from policy.vqvae_rise.vector_quantize_pytorch.residual_vq import ResidualVQ, GroupedResidualVQ
+# from .random_projection_quantizer import RandomProjectionQuantizerx
+
+# from vector_quantize_pytorch.random_projection_quantizer import RandomProjectionQuantizerx

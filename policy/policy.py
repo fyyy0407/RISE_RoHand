@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 from policy.tokenizer import Sparse3DEncoder
 from policy.transformer import Transformer
 from policy.diffusion import DiffusionUNetPolicy
-
+from policy.vqvae_rise.vqvae import VqVae
 
 class RISE(nn.Module):
     def __init__(
@@ -28,6 +28,16 @@ class RISE(nn.Module):
         self.transformer = Transformer(hidden_dim, nheads, num_encoder_layers, num_decoder_layers, dim_feedforward, dropout)
         self.action_decoder = DiffusionUNetPolicy(action_dim, num_action, num_obs, obs_feature_dim)
         self.readout_embed = nn.Embedding(1, hidden_dim)
+        self.vqvae_model=VqVae(
+            obs_dim=60,
+            input_dim_h=2,         # Sequence length
+            input_dim_w=3,         # Action dimension
+            n_latent_dims=16,
+            vqvae_n_embed=8,
+            vqvae_groups=2,
+            eval=False,
+            device='cuda',
+        )
         # learnable token,汇聚所有点的上下文信息
 
     def forward(self, cloud, actions = None, batch_size = 24):

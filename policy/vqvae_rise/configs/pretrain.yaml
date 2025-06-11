@@ -1,0 +1,25 @@
+# configs/pretrain_ant.yaml
+
+seed: 42
+device: cuda
+epochs: 500
+batch_size: 256
+save_path: ./checkpoints
+
+wandb:
+  project: vqvae-pretrain
+  entity: your_wandb_username  # ← 替换为你的 wandb 用户名
+
+vqvae_model:
+  _target_: vqvae.vqvae.VQVAE
+  input_dim: 27             # ← 根据你手部数据或状态维度调整
+  hidden_dim: 256
+  num_embeddings: 512
+  embedding_dim: 64
+  commitment_cost: 0.25
+  decay: 0.99
+
+data:
+  _target_: vqvae.datasets.AntDataset  # ← 替换成你实际使用的数据集类
+  data_path: ./data/ant                # ← 替换成你的数据路径
+  train: True
